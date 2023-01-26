@@ -1,6 +1,8 @@
 
 # Free Python Scripts for Sitewide Link Quality
 
+This is a FREE collaboration between @alton_lex and FatJoe.com
+
 
 
 ## About Me
@@ -51,10 +53,11 @@ A blog that has 100 articles but links to 2000 external sources would be sending
 
 ### Manual alternative:
 
-Find amount of URLs in sitemap via /sitemap.xml or Screaming Frog
+1) Find amount of URLs in sitemap via /sitemap.xml or Screaming Frog
 
-Find amount of outbound links in SEMRush, ahrefs, or Screaming Frog 
-Calculate ratio of Urls to outbound links
+2) Find amount of outbound links in SEMRush, ahrefs, or Screaming Frog 
+
+3) Calculate ratio of Urls to outbound links
 
 ### Example - fatjoe.com:
 
@@ -118,7 +121,6 @@ Calculate ratio of traffic to pages
 
 
 
-
 # 4) Sitemap Links compared to Indexed Links
 
 ### Objective: 
@@ -142,3 +144,4 @@ Google search the domain with ‘site:’ appended to the beginning and find num
 138 Google results 
 
 +7 results in index 
+
