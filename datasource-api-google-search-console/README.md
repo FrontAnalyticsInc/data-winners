@@ -9,7 +9,11 @@ GSC is one of the most valuable resources for anyone concerned with organic traf
 
 Part 1: 
 Used to connect and run a sample query
-Details https://twitter.com/alton_lex/status/1611252976903139330
+
+- [Free sourcecode for part 1](https://github.com/FrontAnalyticsInc/data-winners/blob/main/datasource-api-google-search-console/part1-authenticate_and_query.ipynb)
+- Video tutorial (Free with email registration): https://datawinners.gumroad.com/l/gsc_to_bq
+- Group support available (with paid upgrade on Gumroad and Discord Server)
+- First Twitter announcement https://twitter.com/alton_lex/status/1611252976903139330
 
 #### Coming soon:
 
