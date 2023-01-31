@@ -21,9 +21,8 @@ def test_main():
     from unittest.mock import Mock
     data = {
         'site': site, 
-        'page_url':page_url, 
-        'start_date':start_date, 
-        'end_date':end_date, 
+        'start_date':str(start_date.date()), 
+        'end_date':str(end_date.date()), 
         'BQ_DATASET_NAME':BQ_DATASET_NAME, 
         'BQ_TABLE_NAME':BQ_TABLE_NAME
     }

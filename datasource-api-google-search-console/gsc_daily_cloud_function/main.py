@@ -34,14 +34,29 @@ def run(request):
     
     ##### get variables
     site = request_json.get('site')
-    page_url = request_json.get('page_url')
-    startDate = request_json.get('start_date')
-    endDate = request_json.get('end_date')
     BQ_DATASET_NAME = request_json.get('BQ_DATASET_NAME')
     BQ_TABLE_NAME = request_json.get('BQ_TABLE_NAME')
     BQ_PROJECT_NAME = request_json.get('BQ_PROJECT_NAME')
 
+    # optional defaults to 4 days ago
+    n_days_ago = request_json.get('n_days_ago', 4)
 
+    # optional
+    page_url = request_json.get('page_url', None)
+    # end Date is start_date+1
+
+    # optional start date
+    if request_json.get('start_date'):
+        # given a start date so use that
+        startDate = datetime.datetime.strptime( request_json.get('start_date'), '%Y-%m-%d')
+    else:
+        # defaults to today minus n_days_ago
+        startDate = (datetime.datetime.today() - datetime.timedelta(days=n_days_ago)).date()
+    # optional end date
+    if request_json.get('end_date'):
+        endDate = datetime.datetime.strptime( request_json.get('end_date'), '%Y-%m-%d')
+    else:
+        endDate = startDate
 
 
     ##### uses the locally uploaded service account key
@@ -69,26 +84,28 @@ def run(request):
     # initialize the dataset for formatted rows
     df_all_queries = pd.DataFrame()
 
-    # recent daily pull query
+    # recent daily pull query for all urls
     data = {
       "startDate": startDate.strftime("%Y-%m-%d"),
       "endDate": endDate.strftime("%Y-%m-%d"),
       "dimensions": ["query","device","country"],
-      "dimensionFilterGroups": [
-        {
-          "groupType": "and",
-          "filters": [
-            {
-              "dimension": "page",
-              "operator": "contains",
-              "expression": page_url
-            }
-          ]
-        }
-      ],
       "rowLimit": 25000
     }
 
+    # if a page_url is given
+    if page_url:
+        data["dimensionFilterGroups"] = [
+              {
+                "groupType": "and",
+                "filters": [
+                  {
+                    "dimension": "page",
+                    "operator": "contains",
+                    "expression": page_url
+                  }
+                ]
+              }
+            ]
 
     # Assign Start Row
     start_row = 0
