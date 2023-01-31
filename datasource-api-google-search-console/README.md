@@ -15,7 +15,7 @@ Used to connect and run a sample query
 - Group support available (with paid upgrade on Gumroad and Discord Server)
 - First Twitter announcement https://twitter.com/alton_lex/status/1611252976903139330
 
-#### Coming soon:
+#### Available as a paid upgrade:
 
 - Part 2 will include how to save directly to BigQuery
 - Part 3 will be about automation
