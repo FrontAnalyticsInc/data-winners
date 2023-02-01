@@ -131,7 +131,7 @@ def run(request):
         df_queries['updated_at'] = datetime.datetime.now()
 
         # By default the keys/dimensions are in a single column, let's split them out into separate columns.
-        new_cols = df_queries['keys'].astype(str).str.replace("[","").str.replace("]","")
+        new_cols = df_queries['keys'].astype(str).str.replace("[","",regex=False).str.replace("]","",regex=False)
         new_cols = new_cols.str.split(pat=',',expand=True, n=3)
 
         # Give the columsn sensible names
