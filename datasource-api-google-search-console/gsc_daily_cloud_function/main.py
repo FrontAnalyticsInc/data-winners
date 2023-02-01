@@ -48,15 +48,10 @@ def run(request):
     # optional start date
     if request_json.get('start_date'):
         # given a start date so use that
-        startDate = datetime.datetime.strptime( request_json.get('start_date'), '%Y-%m-%d')
+        start_date = datetime.datetime.strptime( request_json.get('start_date'), '%Y-%m-%d')
     else:
         # defaults to today minus n_days_ago
-        startDate = (datetime.datetime.today() - datetime.timedelta(days=n_days_ago)).date()
-    # optional end date
-    if request_json.get('end_date'):
-        endDate = datetime.datetime.strptime( request_json.get('end_date'), '%Y-%m-%d')
-    else:
-        endDate = startDate
+        start_date = (datetime.datetime.today() - datetime.timedelta(days=n_days_ago))
 
 
     ##### uses the locally uploaded service account key
@@ -69,6 +64,7 @@ def run(request):
             SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     
 
+    output = {}
 
     #### Google Search Console
     # initiates the credentials
@@ -86,9 +82,9 @@ def run(request):
 
     # recent daily pull query for all urls
     data = {
-      "startDate": startDate.strftime("%Y-%m-%d"),
-      "endDate": endDate.strftime("%Y-%m-%d"),
-      "dimensions": ["query","device","country"],
+      "startDate": start_date.strftime("%Y-%m-%d"),
+      "endDate": start_date.strftime("%Y-%m-%d"),
+      "dimensions": ["page","query","device","country"],
       "rowLimit": 25000
     }
 
@@ -130,22 +126,22 @@ def run(request):
     # convert the raw rows to a pandas df
     if(len(all_rows_as_json)):
         df_queries = pd.DataFrame(j)
-        df_queries['url'] = page_url
         df_queries['property'] = site
-        df_queries['start_date'] = startDate.date()
+        df_queries['start_date'] = start_date.date()
         df_queries['updated_at'] = datetime.datetime.now()
 
         # By default the keys/dimensions are in a single column, let's split them out into separate columns.
         new_cols = df_queries['keys'].astype(str).str.replace("[","").str.replace("]","")
-        new_cols = new_cols.str.split(pat=',',expand=True,n=2)
+        new_cols = new_cols.str.split(pat=',',expand=True, n=3)
 
         # Give the columsn sensible names
-        new_cols.columns = ["query","device","country"]
+        new_cols.columns = ["page","query","device","country"]
 
         # Bring back a key from the intial dataframe so we can join
         new_cols['key'] = df_queries['keys']
 
         # Get rid of quotation marks
+        new_cols['url'] = new_cols['page'].str.replace("'","").str.lower()
         new_cols['query'] = new_cols['query'].str.replace("'","").str.lower()
         new_cols['device'] = new_cols['device'].str.replace("'","").str.lower()
         new_cols['country'] = new_cols['country'].str.replace("'","").str.lower()
@@ -154,78 +150,78 @@ def run(request):
         df_queries = pd.concat([df_queries, new_cols], axis=1, join='inner')
 
         # Drop the key columns
-        df_queries = df_queries.drop(["key","keys","ctr"],axis=1)
+        df_queries = df_queries.drop(["key","keys","ctr","page"],axis=1)
 
         # save all the queries for this page with all other pages
         df_all_queries = pd.concat([df_all_queries, df_queries])
 
 
-    ##### Bigquery
-    # establish a BigQuery client
-    client_bq = bigquery.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
-    BQ_PROJECT_NAME = client_bq.project
+        ##### Bigquery
+        # establish a BigQuery client
+        client_bq = bigquery.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
+        BQ_PROJECT_NAME = client_bq.project
 
 
 
-    # verify there are no duplicate entries in bigquery
-    # Query bigquery to determine what has already been loaded?
-    # Update the in-memory credentials cache (added in pandas-gbq 0.7.0).
-    pandas_gbq.context.credentials = credentials
-    pandas_gbq.context.project = BQ_PROJECT_NAME
+        # verify there are no duplicate entries in bigquery
+        # Query bigquery to determine what has already been loaded?
+        # Update the in-memory credentials cache (added in pandas-gbq 0.7.0).
+        pandas_gbq.context.credentials = credentials
+        pandas_gbq.context.project = BQ_PROJECT_NAME
 
 
-    def query_table(start_date, PROJECT_ID, DATASET, TABLE):
-        QUERY = "SELECT * FROM {dataset}.{table} WHERE start_date = '{d}'"
-        
-        query = QUERY.format(dataset=DATASET, table=TABLE, d=start_date)
-        result = pd.read_gbq(query, PROJECT_ID, dialect='standard')
+        def query_table(start_date, PROJECT_ID, DATASET, TABLE):
+            QUERY = "SELECT * FROM {dataset}.{table} WHERE start_date = '{d}'"
+            
+            query = QUERY.format(dataset=DATASET, table=TABLE, d=start_date)
+            result = pd.read_gbq(query, PROJECT_ID, dialect='standard')
 
-        result['already_loaded'] = True
-        return result
+            result['already_loaded'] = True
+            return result
 
 
-    # get all the records already loaded within the last n days
-    already_loaded = query_table(startDate.strftime("%Y-%m-%d"), BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME)
+        # get all the records already loaded within the last n days
+        already_loaded = query_table(start_date.strftime("%Y-%m-%d"), BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME)
 
-    # find the rows that aren't loaded yet
-    join_cols = ['start_date','property','url','device','country']
-    not_loaded = df_all_queries.merge(already_loaded[join_cols+['already_loaded']], how="left", on=join_cols)
-    not_loaded = not_loaded[not_loaded['already_loaded'].isna()]
-    cols = list(df_all_queries.columns)
-    not_loaded = not_loaded[cols]
+        # find the rows that aren't loaded yet
+        join_cols = ['start_date','property','url','device','country']
+        not_loaded = df_all_queries.merge(already_loaded[join_cols+['already_loaded']], how="left", on=join_cols)
+        not_loaded = not_loaded[not_loaded['already_loaded'].isna()]
+        cols = list(df_all_queries.columns)
+        not_loaded = not_loaded[cols]
 
-    # record n_records_loaded
-    n_records_loaded = len(not_loaded)
-    output = {'n_records_loaded': n_records_loaded}
+        # record n_records_loaded
+        n_records_loaded = len(not_loaded)
+        output["n_records_loaded"] = n_records_loaded
 
-    # continue loading if not loaded yet
-    if n_records_loaded:
+        # continue loading if not loaded yet
+        if n_records_loaded:
 
-      # create a job config
-      # Set the destination table
+            # create a job config
+            # Set the destination table
+            
+            table_id = '{}.{}.{}'.format(BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME)
+            job_config = bigquery.LoadJobConfig(
+                # Specify a (partial) schema. All columns are always written to the
+                # table. The schema is used to assist in data type definitions.
+                schema=[
+                    # Specify the type of columns whose type cannot be auto-detected. For
+                    # example the "title" column uses pandas dtype "object", so its
+                    # data type is ambiguous.
+                    #bigquery.SchemaField("title", bigquery.enums.SqlTypeNames.STRING),
+                    # Indexes are written if included in the schema by name.
+                    #bigquery.SchemaField("wikidata_id", bigquery.enums.SqlTypeNames.STRING),
+                ],
+                # Optionally, set the write disposition. BigQuery appends loaded rows
+                # to an existing table by default, but with WRITE_TRUNCATE write
+                # disposition it replaces the table with the loaded data.
+                write_disposition="WRITE_APPEND",
+            )
 
-      table_id = '{}.{}.{}'.format(BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME)
-      job_config = bigquery.LoadJobConfig(
-          # Specify a (partial) schema. All columns are always written to the
-          # table. The schema is used to assist in data type definitions.
-          schema=[
-              # Specify the type of columns whose type cannot be auto-detected. For
-              # example the "title" column uses pandas dtype "object", so its
-              # data type is ambiguous.
-              #bigquery.SchemaField("title", bigquery.enums.SqlTypeNames.STRING),
-              # Indexes are written if included in the schema by name.
-              #bigquery.SchemaField("wikidata_id", bigquery.enums.SqlTypeNames.STRING),
-          ],
-          # Optionally, set the write disposition. BigQuery appends loaded rows
-          # to an existing table by default, but with WRITE_TRUNCATE write
-          # disposition it replaces the table with the loaded data.
-          write_disposition="WRITE_APPEND",
-      )
-
-      job = client_bq.load_table_from_dataframe(
-          not_loaded, table_id, job_config=job_config
-      )  # Make an API request.
-      job.result()  # Wait for the job to complete.
+            job = client_bq.load_table_from_dataframe(
+                not_loaded, table_id, job_config=job_config
+            )  # Make an API request.
+            job.result()  # Wait for the job to complete.
 
 
     # finish

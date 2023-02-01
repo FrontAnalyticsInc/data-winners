@@ -9,10 +9,6 @@ def test_main():
 
     # construct input variables
     site = "bikelanes.com"
-    page_url = "https://bikelanes.com/"
-    today = datetime.datetime.today()
-    start_date = today - datetime.timedelta(days=4)
-    end_date = today - datetime.timedelta(days=3)
     BQ_DATASET_NAME = 'data_winners_dataset'
     BQ_TABLE_NAME = 'gsc_daily_table'
 
@@ -21,10 +17,9 @@ def test_main():
     from unittest.mock import Mock
     data = {
         'site': site, 
-        'start_date':str(start_date.date()), 
-        'end_date':str(end_date.date()), 
         'BQ_DATASET_NAME':BQ_DATASET_NAME, 
-        'BQ_TABLE_NAME':BQ_TABLE_NAME
+        'BQ_TABLE_NAME':BQ_TABLE_NAME,
+        'start_date': '2023-01-29'
     }
     request = Mock(get_json=Mock(return_value=data), args=data)
     run(request)
