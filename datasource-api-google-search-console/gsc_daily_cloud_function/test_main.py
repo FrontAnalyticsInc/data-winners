@@ -19,7 +19,8 @@ def test_main():
         'site': site, 
         'BQ_DATASET_NAME':BQ_DATASET_NAME, 
         'BQ_TABLE_NAME':BQ_TABLE_NAME,
-        'start_date': '2023-01-29'
+        'start_date': '2023-01-01',
+        'end_date': '2023-01-29'
     }
     request = Mock(get_json=Mock(return_value=data), args=data)
     run(request)
