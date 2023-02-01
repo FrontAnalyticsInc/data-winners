@@ -52,6 +52,12 @@ def run(request):
     else:
         # defaults to today minus n_days_ago
         start_date = (datetime.datetime.today() - datetime.timedelta(days=n_days_ago))
+    if request_json.get('end_date'):
+        # given a start date so use that
+        end_date = datetime.datetime.strptime( request_json.get('end_date'), '%Y-%m-%d')
+    else:
+        end_date = start_date
+
 
 
     ##### uses the locally uploaded service account key
@@ -83,8 +89,8 @@ def run(request):
     # recent daily pull query for all urls
     data = {
       "startDate": start_date.strftime("%Y-%m-%d"),
-      "endDate": start_date.strftime("%Y-%m-%d"),
-      "dimensions": ["page","query","device","country"],
+      "endDate": end_date.strftime("%Y-%m-%d"),
+      "dimensions": ["date","page","query","device","country"],
       "rowLimit": 25000
     }
 
@@ -127,20 +133,20 @@ def run(request):
     if(len(all_rows_as_json)):
         df_queries = pd.DataFrame(j)
         df_queries['property'] = site
-        df_queries['start_date'] = start_date.date()
         df_queries['updated_at'] = datetime.datetime.now()
 
         # By default the keys/dimensions are in a single column, let's split them out into separate columns.
         new_cols = df_queries['keys'].astype(str).str.replace("[","",regex=False).str.replace("]","",regex=False)
-        new_cols = new_cols.str.split(pat=',',expand=True, n=3)
+        new_cols = new_cols.str.split(pat=',',expand=True, n=4)
 
         # Give the columsn sensible names
-        new_cols.columns = ["page","query","device","country"]
+        new_cols.columns = ["date", "page","query","device","country"]
 
         # Bring back a key from the intial dataframe so we can join
         new_cols['key'] = df_queries['keys']
 
         # Get rid of quotation marks
+        new_cols['start_date'] = new_cols['date'].str.replace("'","").str.lower()
         new_cols['url'] = new_cols['page'].str.replace("'","").str.lower()
         new_cols['query'] = new_cols['query'].str.replace("'","").str.lower()
         new_cols['device'] = new_cols['device'].str.replace("'","").str.lower()
@@ -150,7 +156,7 @@ def run(request):
         df_queries = pd.concat([df_queries, new_cols], axis=1, join='inner')
 
         # Drop the key columns
-        df_queries = df_queries.drop(["key","keys","ctr","page"],axis=1)
+        df_queries = df_queries.drop(["key","keys","ctr","page","date"],axis=1)
 
         # save all the queries for this page with all other pages
         df_all_queries = pd.concat([df_all_queries, df_queries])
