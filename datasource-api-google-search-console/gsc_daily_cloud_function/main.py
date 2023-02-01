@@ -194,10 +194,12 @@ def run(request):
     cols = list(df_all_queries.columns)
     not_loaded = not_loaded[cols]
 
-
+    # record n_records_loaded
+    n_records_loaded = len(not_loaded)
+    output = {'n_records_loaded': n_records_loaded}
 
     # continue loading if not loaded yet
-    if len(not_loaded):
+    if n_records_loaded:
 
       # create a job config
       # Set the destination table
@@ -221,10 +223,10 @@ def run(request):
       )
 
       job = client_bq.load_table_from_dataframe(
-          df_all_queries, table_id, job_config=job_config
+          not_loaded, table_id, job_config=job_config
       )  # Make an API request.
       job.result()  # Wait for the job to complete.
 
 
     # finish
-    return f'Running'
+    return output
