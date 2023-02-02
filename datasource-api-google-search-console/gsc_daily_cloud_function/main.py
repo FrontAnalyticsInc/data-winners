@@ -151,22 +151,11 @@ def run(request):
             df_queries['updated_at'] = datetime.datetime.now()
 
             # By default the keys/dimensions are in a single column, let's split them out into separate columns.
-            new_cols = df_queries['keys'].astype(str).str.replace("[","",regex=False).str.replace("]","",regex=False)
-            new_cols = new_cols.str.split(pat=',',expand=True, n=4)
-
-            # Give the columsn sensible names
-            new_cols.columns = ["date", "page","query","device","country"]
-
+            new_cols = pd.DataFrame()
             # Bring back a key from the intial dataframe so we can join
             new_cols['key'] = df_queries['keys']
-
-            # Get rid of quotation marks
-            new_cols['url'] = new_cols['page'].str.replace("'","").str.lower()
-            new_cols['query'] = new_cols['query'].str.replace("'","").str.lower()
-            new_cols['device'] = new_cols['device'].str.replace("'","").str.lower()
-            new_cols['country'] = new_cols['country'].str.replace("'","").str.lower()
-            new_cols['start_date'] = new_cols['date'].str.replace("'","").str.lower()
-
+            new_cols[['start_date', "url", "query", "device", "country"]] = pd.DataFrame(df_queries['keys'].tolist(), index= df_queries.index)
+            
             # convert string to date
             new_cols["start_date"] =  pd.to_datetime(new_cols["start_date"], format="%Y-%m-%d").dt.date
 
@@ -174,7 +163,7 @@ def run(request):
             df_queries = pd.concat([df_queries, new_cols], axis=1, join='inner')
 
             # Drop the key columns
-            df_queries = df_queries.drop(["key","keys","ctr","page","date"],axis=1)
+            df_queries = df_queries.drop(["key","keys","ctr"],axis=1)
 
             # save all the queries for this page with all other pages
             df_all_queries = pd.concat([df_all_queries, df_queries])
@@ -184,7 +173,6 @@ def run(request):
             # establish a BigQuery client
             client_bq = bigquery.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
             BQ_PROJECT_NAME = client_bq.project
-
 
 
             # verify there are no duplicate entries in bigquery
