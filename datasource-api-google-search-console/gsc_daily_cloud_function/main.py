@@ -105,12 +105,12 @@ def run(request):
         data = {
         "startDate": start_date.strftime("%Y-%m-%d"),
         "endDate": end_date.strftime("%Y-%m-%d"),
-        "dimensions": ["date","page","query","device","country"],
+        "dimensions": ["date","page", "query","device","country"], # "device","country""query"
         "rowLimit": 25000
         }
 
         # if a page_url is given
-        if page_url:
+        if False:
             data["dimensionFilterGroups"] = [
                 {
                     "groupType": "and",
