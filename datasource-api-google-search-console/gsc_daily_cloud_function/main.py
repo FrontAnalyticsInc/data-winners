@@ -13,6 +13,7 @@ import google.auth.transport.requests
 from google.cloud import bigquery
 
 import pandas as pd
+import numpy as np
 
 import dateutil
 import pandas_gbq
@@ -36,14 +37,16 @@ def run(request):
     site = request_json.get('site')
     BQ_DATASET_NAME = request_json.get('BQ_DATASET_NAME')
     BQ_TABLE_NAME = request_json.get('BQ_TABLE_NAME')
-    BQ_PROJECT_NAME = request_json.get('BQ_PROJECT_NAME')
 
-    # optional defaults to 4 days ago
+    # optional start date defaults to 4 days ago
     n_days_ago = request_json.get('n_days_ago', 4)
 
     # optional
     page_url = request_json.get('page_url', None)
     # end Date is start_date+1
+
+    # optional n_days_back
+    n_days_back = request_json.get('n_days_back', 1)
 
     # optional start_date
     if request_json.get('start_date'):
@@ -58,17 +61,14 @@ def run(request):
         # given a start date so use that
         end_date = datetime.datetime.strptime( request_json.get('end_date'), '%Y-%m-%d')
     else:
-        end_date = start_date
-
-    # optional n_days_back
-    n_days_back = request_json.get('n_days_back', 1)
-
+        end_date = (start_date - datetime.timedelta(days=n_days_back))
 
 
 
     ##### uses the locally uploaded service account key
     SERVICE_ACCOUNT_FILE = "./service-account-key.json"
     SCOPES = [
+      'https://www.googleapis.com/auth/webmasters.readonly',
       'https://www.googleapis.com/auth/webmasters',
       'https://www.googleapis.com/auth/bigquery'
     ]
@@ -76,25 +76,65 @@ def run(request):
             SERVICE_ACCOUNT_FILE, scopes=SCOPES)
     
 
-    output = {}
+    #### Google Search Console
+    # initiates the credentials
+    service = build(
+        'webmasters',
+        'v3',
+        credentials=credentials
+    )
+    response = service.sites().list().execute()
 
-    start_date_input = start_date
-    end_date_input = end_date
 
-    # loop over the days back
-    for nth_day_ago in range(0,n_days_back):
+    ##### Bigquery
+    # establish a BigQuery client
+    client_bq = bigquery.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
+    BQ_PROJECT_NAME = client_bq.project
 
-        start_date = (start_date_input - datetime.timedelta(days=nth_day_ago))
-        end_date = (end_date_input - datetime.timedelta(days=nth_day_ago))
 
-        #### Google Search Console
-        # initiates the credentials
-        service = build(
-            'webmasters',
-            'v3',
-            credentials=credentials
-        )
-        response = service.sites().list().execute()
+
+    # determine what days to run
+    # only the days that don't have any clicks yet
+
+    def query_table_clicks(start_date, end_date, PROJECT_ID, DATASET, TABLE, property):
+        QUERY = "SELECT start_date, sum(clicks) as total_clicks FROM {dataset}.{table} WHERE start_date >= '{end_date}' and start_date <= '{start_date}' and property = '{property}' group by start_date"
+        
+        query = QUERY.format(dataset=DATASET, table=TABLE, start_date=start_date, end_date=end_date, property=property)
+        result = pd.read_gbq(query, PROJECT_ID, dialect='standard')
+
+        result['already_loaded'] = True
+        return result
+
+    bq_results = query_table_clicks(start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"), BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME, property=site)
+
+
+
+    output = {
+        "n_days_with_zero_clicks_at_start": len(bq_results[bq_results['total_clicks']==0])
+    }
+
+    # one big table with all input dates and zero dates
+
+    days_to_check = bq_results
+    input_days_to_check = pd.DataFrame()
+    dates_input_to_check = []
+    for days_back in range(0, n_days_back):
+        dates_input_to_check.append( (start_date - datetime.timedelta(days=days_back)).date() )
+    input_days_to_check['start_date'] = dates_input_to_check
+    input_days_to_check['from_inputs'] = True
+    days_to_check = days_to_check.merge(input_days_to_check,how='outer')
+
+    days_to_check["total_clicks"] = days_to_check["total_clicks"].replace(np.nan, 0)
+    days_to_check = days_to_check[days_to_check['total_clicks']==0]
+    # loop over the days that are missing clicks
+    for index, row in days_to_check.iterrows():
+        
+
+        start_date_to_process = row['start_date']
+        end_date_to_process = start_date_to_process
+
+
+
 
         # initialize for raw rows
         all_rows_as_json = []
@@ -103,14 +143,20 @@ def run(request):
 
         # recent daily pull query for all urls
         data = {
-        "startDate": start_date.strftime("%Y-%m-%d"),
-        "endDate": end_date.strftime("%Y-%m-%d"),
-        "dimensions": ["date","page", "query","device","country"], # "device","country""query"
-        "rowLimit": 25000
+            "startDate": start_date_to_process.strftime("%Y-%m-%d"),
+            "endDate": end_date_to_process.strftime("%Y-%m-%d"),
+            "dimensions": ["date","page", "query","device","country"],
+            "rowLimit": 25000,
+            "type": 'web', # Possible values: 'web' (default), 'image', 'video', 'discover','googleNews'.,
+            'dataState': "final"
         }
 
+        #data_state (str): The data_state you would like to use for your report. 
+        #        Possible values: 'final' (default - only finalized data), 
+        #        'all' (finalized & fresh data).
+
         # if a page_url is given
-        if False:
+        if page_url:
             data["dimensionFilterGroups"] = [
                 {
                     "groupType": "and",
@@ -129,11 +175,12 @@ def run(request):
         # Loop over requests until all rows are pulled into DataFrame
         while True:
             data['startRow'] = start_row
-            res = requests.post("https://www.googleapis.com/webmasters/v3/sites/"+"sc-domain:"+site+"/searchAnalytics/query?access_token="+credentials.token, json=data)
+
+            # use the service to pull API details
+            res = service.searchanalytics().query(siteUrl = "sc-domain:"+site, body=data).execute()
+            j = res.get('rows',[])
 
             # convert the response to a data frame
-            j = json.loads(res.text).get('rows',[])
-
             if j:
                 all_rows_as_json.extend(j)
             else:
@@ -144,9 +191,28 @@ def run(request):
             start_row += 25000
 
 
-        # convert the raw rows to a pandas df
         if(len(all_rows_as_json)):
-            df_queries = pd.DataFrame(j)
+        
+            # delete the data currently loaded just in case
+            def delete_data(start_date, end_date, PROJECT_ID, DATASET, TABLE, property):
+                QUERY = "delete FROM {dataset}.{table} WHERE start_date >= '{start_date}' and start_date <= '{end_date}' and property = '{property}'"
+                
+                query = QUERY.format(dataset=DATASET, table=TABLE, start_date=start_date, end_date=end_date, property=property)
+                query_job = client_bq.query(query)  # API request
+                rows = query_job.result()
+
+                return rows
+
+
+
+            # get all the records already loaded within the last n days
+            delete_data(start_date_to_process.strftime("%Y-%m-%d"),end_date_to_process.strftime("%Y-%m-%d"), BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME, property=site)
+
+
+
+        
+            # convert the raw rows to a pandas df
+            df_queries = pd.DataFrame(all_rows_as_json)
             df_queries['property'] = site
             df_queries['updated_at'] = datetime.datetime.now()
 
@@ -169,10 +235,6 @@ def run(request):
             df_all_queries = pd.concat([df_all_queries, df_queries])
 
 
-            ##### Bigquery
-            # establish a BigQuery client
-            client_bq = bigquery.Client.from_service_account_json(SERVICE_ACCOUNT_FILE)
-            BQ_PROJECT_NAME = client_bq.project
 
 
             # verify there are no duplicate entries in bigquery
@@ -180,12 +242,12 @@ def run(request):
             # Update the in-memory credentials cache (added in pandas-gbq 0.7.0).
             pandas_gbq.context.credentials = credentials
             pandas_gbq.context.project = BQ_PROJECT_NAME
+            
 
-
-            def query_table(start_date, end_date, PROJECT_ID, DATASET, TABLE):
-                QUERY = "SELECT * FROM {dataset}.{table} WHERE start_date >= '{start_date}' and start_date <= '{end_date}'"
+            def query_table(start_date, end_date, PROJECT_ID, DATASET, TABLE, property):
+                QUERY = "SELECT * FROM {dataset}.{table} WHERE start_date >= '{start_date}' and start_date <= '{end_date}' and property = '{property}'"
                 
-                query = QUERY.format(dataset=DATASET, table=TABLE, start_date=start_date, end_date=end_date)
+                query = QUERY.format(dataset=DATASET, table=TABLE, start_date=start_date, end_date=end_date, property=property)
                 result = pd.read_gbq(query, PROJECT_ID, dialect='standard')
 
                 result['already_loaded'] = True
@@ -193,7 +255,7 @@ def run(request):
 
 
             # get all the records already loaded within the last n days
-            already_loaded = query_table(start_date.strftime("%Y-%m-%d"),end_date.strftime("%Y-%m-%d"), BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME)
+            already_loaded = query_table(start_date_to_process.strftime("%Y-%m-%d"),end_date_to_process.strftime("%Y-%m-%d"), BQ_PROJECT_NAME, BQ_DATASET_NAME, BQ_TABLE_NAME, property=site)
 
             # find the rows that aren't loaded yet
             join_cols = ['start_date','property','url','device','country']
@@ -207,7 +269,7 @@ def run(request):
             output["n_records_loaded"] = output.get("n_records_loaded",0) + n_records_loaded
             output["n_days_back_loaded"] = output.get("n_days_back_loaded",0) + 1
             if output.get('start_date') is None:
-                output["start_date"] = str(start_date.date())
+                output["start_date"] = str(start_date_to_process)
 
             # continue loading if not loaded yet
             if n_records_loaded:
