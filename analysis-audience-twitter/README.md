@@ -32,6 +32,8 @@ Steps:
 
 ## Reference
 
+Pricing and access levels have recently changed as of Feb 2023!
+
 Getting started: https://developer.twitter.com/en/docs/twitter-api/getting-started/about-twitter-api
 
 Sample Code: https://github.com/twitterdev/Twitter-API-v2-sample-code
