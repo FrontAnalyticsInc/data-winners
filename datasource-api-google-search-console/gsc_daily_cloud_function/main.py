@@ -126,8 +126,10 @@ def run(request):
 
     days_to_check["total_clicks"] = days_to_check["total_clicks"].replace(np.nan, 0)
     days_to_check = days_to_check[days_to_check['total_clicks']==0]
+
+
     # loop over the days that are missing clicks
-    for index, row in days_to_check.iterrows():
+    for index, row in days_to_check.sort_values('start_date').iterrows():
         
 
         start_date_to_process = row['start_date']
